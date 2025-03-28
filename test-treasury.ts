@@ -4,7 +4,7 @@ import { TransactionBlock } from '@mysten/sui.js/transactions';
 import { fromB64 } from '@mysten/sui.js/utils';
 
 // Configuration
-const PACKAGE_ID = "0xd3cec38ed63345f1e8b17fca3b3955c02285710ff7b415043d1d77d3d6655b00";
+const PACKAGE_ID = "0x00cf538658ebb2933d139a41ba3be0f6d0e48a178986987c142e1729dbc6598b";
 const RPC_URL = "https://fullnode.devnet.sui.io:443";
 
 // Initialize provider and keypair
@@ -63,30 +63,35 @@ async function executeTransaction(tx: TransactionBlock) {
 
 // Create new treasury
 async function createTreasury(initialBalance: number, requiredVotes: number, initialPoolValue: number) {
-    console.log("Creating treasury with balance:", initialBalance);
     const tx = new TransactionBlock();
 
-    // Create initial balance
-    console.log("Splitting coins...");
-    const [initialBalanceCoin] = tx.splitCoins(tx.gas, [tx.pure(initialBalance)]);
+    // Создаем монету для начального баланса
+    const [coin] = tx.splitCoins(tx.gas, [tx.pure(initialBalance)]);
 
-    console.log("Calling new treasury...");
+    // Создаем treasury с явным указанием типов
     const [treasury, managerCap] = tx.moveCall({
         target: `${PACKAGE_ID}::treasury_voting::new`,
         arguments: [
-            initialBalanceCoin,
+            coin,
             tx.pure(requiredVotes),
             tx.pure(initialPoolValue)
-        ]
+        ],
+        typeArguments: ['0x2::sui::SUI']  // Важно: указываем тип монеты
     });
 
     const result = await executeTransaction(tx);
-    treasuryId = result.effects?.created?.[0]?.reference.objectId || "";
-    managerCapId = result.effects?.created?.[1]?.reference.objectId || "";
+    console.log("Full result:", result);
 
-    console.log("Created Treasury:", treasuryId);
-    console.log("Created ManagerCap:", managerCapId);
-    return { treasuryId, managerCapId };
+    // Проверяем результат перед сохранением ID
+    if (result.effects?.status?.status === 'success') {
+        treasuryId = result.effects?.created?.[0]?.reference.objectId || "";
+        managerCapId = result.effects?.created?.[1]?.reference.objectId || "";
+        console.log("Created Treasury:", treasuryId);
+        console.log("Created ManagerCap:", managerCapId);
+        return { treasuryId, managerCapId };
+    } else {
+        throw new Error(`Failed to create treasury: ${result.effects?.status?.error}`);
+    }
 }
 
 // Deposit SUI
