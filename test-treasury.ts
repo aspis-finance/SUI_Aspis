@@ -1,13 +1,20 @@
-import { JsonRpcProvider, TransactionBlock, Ed25519Keypair } from '@mysten/sui.js';
+import { SuiClient } from '@mysten/sui.js/client';
+import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519';
+import { TransactionBlock } from '@mysten/sui.js/transactions';
 import { fromB64 } from '@mysten/sui.js/utils';
 
 // Configuration
-const PACKAGE_ID = "0x9f70cea5256cff8947144c40481b7368570cdd252607c4dd41c24546e490c1f9";
-const RPC_URL = "https://fullnode.testnet.sui.io:443";
+const PACKAGE_ID = "0xd3cec38ed63345f1e8b17fca3b3955c02285710ff7b415043d1d77d3d6655b00";
+const RPC_URL = "https://fullnode.devnet.sui.io:443";
 
 // Initialize provider and keypair
-const provider = new JsonRpcProvider({ url: RPC_URL });
-const keypair = Ed25519Keypair.fromSecretKey(fromB64("AXv/pa0c8WtMdPn9vw6/RnVNJjixWSiAEump9/zhVTbz")); // Replace with your private key from: sui client export-private-key <ADDRESS>
+const provider = new SuiClient({ url: RPC_URL });
+const keypair = Ed25519Keypair.fromSecretKey(fromB64("Xv/pa0c8WtMdPn9vw6/RnVNJjixWSiAEump9/zhVTbz"));
+
+// Выведем адрес сразу после создания keypair
+const myAddress = keypair.getPublicKey().toSuiAddress();
+console.log("Working with address:", myAddress);
+console.log("Public key:", keypair.getPublicKey().toBase64());
 
 // State
 let treasuryId: string;
@@ -17,6 +24,9 @@ let lpTokenId: string;
 
 // Helper function to execute transactions
 async function executeTransaction(tx: TransactionBlock) {
+    // Устанавливаем газовый бюджет
+    tx.setGasBudget(20000000); // 0.02 SUI для газа
+
     const result = await provider.signAndExecuteTransactionBlock({
         transactionBlock: tx,
         signer: keypair,
@@ -30,10 +40,8 @@ async function executeTransaction(tx: TransactionBlock) {
 }
 
 // Create new treasury
-export async function createTreasury(initialBalance: number, requiredVotes: number, initialPoolValue: number) {
+async function createTreasury(initialBalance: number, requiredVotes: number, initialPoolValue: number) {
     const tx = new TransactionBlock();
-
-    // Create initial balance
     const [initialBalanceCoin] = tx.splitCoins(tx.gas, [tx.pure(initialBalance)]);
 
     const [treasury, managerCap] = tx.moveCall({
@@ -46,20 +54,17 @@ export async function createTreasury(initialBalance: number, requiredVotes: numb
     });
 
     const result = await executeTransaction(tx);
-    treasuryId = result.effects?.created?.[0]?.objectId || "";
-    managerCapId = result.effects?.created?.[1]?.objectId || "";
+    treasuryId = result.effects?.created?.[0]?.reference.objectId || "";
+    managerCapId = result.effects?.created?.[1]?.reference.objectId || "";
 
     console.log("Created Treasury:", treasuryId);
     console.log("Created ManagerCap:", managerCapId);
-
     return { treasuryId, managerCapId };
 }
 
 // Deposit SUI
-export async function deposit(amount: number) {
+async function deposit(amount: number) {
     const tx = new TransactionBlock();
-
-    // Create a coin for deposit
     const [coin] = tx.splitCoins(tx.gas, [tx.pure(amount)]);
 
     const [lpToken] = tx.moveCall({
@@ -71,14 +76,14 @@ export async function deposit(amount: number) {
     });
 
     const result = await executeTransaction(tx);
-    lpTokenId = result.effects?.created?.[0]?.objectId || "";
+    lpTokenId = result.effects?.created?.[0]?.reference.objectId || "";
 
     console.log("Created LPToken:", lpTokenId);
     return lpTokenId;
 }
 
 // Create withdrawal proposal
-export async function createProposal(recipient: string, amount: number) {
+async function createProposal(recipient: string, amount: number) {
     const tx = new TransactionBlock();
 
     tx.moveCall({
@@ -92,14 +97,14 @@ export async function createProposal(recipient: string, amount: number) {
     });
 
     const result = await executeTransaction(tx);
-    proposalId = result.effects?.created?.[0]?.objectId || "";
+    proposalId = result.effects?.created?.[0]?.reference.objectId || "";
 
     console.log("Created Proposal:", proposalId);
     return proposalId;
 }
 
 // Vote on proposal
-export async function vote() {
+async function vote() {
     const tx = new TransactionBlock();
 
     tx.moveCall({
@@ -114,7 +119,7 @@ export async function vote() {
 }
 
 // Execute proposal
-export async function executeProposal() {
+async function executeProposal() {
     const tx = new TransactionBlock();
 
     const [withdrawnCoin] = tx.moveCall({
@@ -127,11 +132,11 @@ export async function executeProposal() {
     });
 
     const result = await executeTransaction(tx);
-    console.log("Withdrawn coin:", result.effects?.created?.[0]?.objectId);
+    console.log("Withdrawn coin:", result.effects?.created?.[0]?.reference.objectId);
 }
 
 // Withdraw SUI
-export async function withdraw() {
+async function withdraw() {
     const tx = new TransactionBlock();
 
     const [withdrawnCoin] = tx.moveCall({
@@ -143,20 +148,38 @@ export async function withdraw() {
     });
 
     const result = await executeTransaction(tx);
-    console.log("Withdrawn coin:", result.effects?.created?.[0]?.objectId);
+    console.log("Withdrawn coin:", result.effects?.created?.[0]?.reference.objectId);
 }
 
-// Example usage
+// Функция для взаимодействия с контрактом
+async function interactWithContract(packageId: string) {
+    // Создаем treasury с 1 SUI initial balance
+    const { treasuryId, managerCapId } = await createTreasury(1, 2, 1000);
+    console.log("Created treasury:", treasuryId);
+
+    // Депозит 1 SUI
+    const lpTokenId = await deposit(1);
+    console.log("Deposited, LP token:", lpTokenId);
+
+    // Создаем proposal
+    const myAddress = keypair.getPublicKey().toSuiAddress();
+    console.log("Script address:", myAddress);
+    console.log("Public key:", keypair.getPublicKey().toBase64());
+    const proposalId = await createProposal(myAddress, 50);
+    console.log("Created proposal:", proposalId);
+}
+
 async function main() {
     try {
-        // Create treasury with 1000 SUI initial balance
-        await createTreasury(1000, 2, 1000);
+        // Create treasury with 0.1 SUI initial balance
+        await createTreasury(100000000, 2, 100000000); // 0.1 SUI = 100000000 MIST
 
-        // Deposit 100 SUI
-        await deposit(100);
+        // Deposit 0.1 SUI
+        await deposit(100000000); // 0.1 SUI
 
-        // Create proposal to withdraw 50 SUI
-        await createProposal("0xcdb0d91425fb5ca2541d30685cd1347483363ddf172ef8561a7d2869819420af", 50);
+        // Create proposal to withdraw 0.05 SUI
+        const myAddress = keypair.getPublicKey().toSuiAddress();
+        await createProposal(myAddress, 50000000); // 0.05 SUI
 
         // Vote
         await vote();
@@ -171,7 +194,5 @@ async function main() {
     }
 }
 
-// Run if called directly
-if (require.main === module) {
-    main();
-} 
+// Запускаем
+main(); 

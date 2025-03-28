@@ -12,5 +12,19 @@
     "@types/node": "^22.13.14",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.2"
-  }
+  },
+  "directories": {
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aspis-finance/SUI_Aspis.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/aspis-finance/SUI_Aspis/issues"
+  },
+  "homepage": "https://github.com/aspis-finance/SUI_Aspis#readme"
 }
