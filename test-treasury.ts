@@ -7,7 +7,7 @@ const RPC_URL = "https://fullnode.testnet.sui.io:443";
 
 // Initialize provider and keypair
 const provider = new JsonRpcProvider({ url: RPC_URL });
-const keypair = Ed25519Keypair.fromSecretKey(fromB64("YOUR_PRIVATE_KEY")); // Replace with your private key from: sui client export-private-key <ADDRESS>
+const keypair = Ed25519Keypair.fromSecretKey(fromB64("AXv/pa0c8WtMdPn9vw6/RnVNJjixWSiAEump9/zhVTbz")); // Replace with your private key from: sui client export-private-key <ADDRESS>
 
 // State
 let treasuryId: string;
