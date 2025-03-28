@@ -9,12 +9,20 @@ const RPC_URL = "https://fullnode.devnet.sui.io:443";
 
 // Initialize provider and keypair
 const provider = new SuiClient({ url: RPC_URL });
-const keypair = Ed25519Keypair.fromSecretKey(fromB64("Xv/pa0c8WtMdPn9vw6/RnVNJjixWSiAEump9/zhVTbz"));
 
-// Выведем адрес сразу после создания keypair
-const myAddress = keypair.getPublicKey().toSuiAddress();
-console.log("Working with address:", myAddress);
-console.log("Public key:", keypair.getPublicKey().toBase64());
+// Мнемоническая фраза
+const MNEMONIC = "erode enroll credit vicious custom they friend layer large enact leave story";
+
+// Создаем keypair из мнемоники
+const keypair = Ed25519Keypair.deriveKeypair(MNEMONIC);
+
+// Выводим адрес для проверки
+const address = keypair.getPublicKey().toSuiAddress();
+console.log("Derived address:", address);
+
+// Можно также попробовать с другим путем деривации
+const keypairWithPath = Ed25519Keypair.deriveKeypair(MNEMONIC, "m/44'/784'/0'/0'/0'");
+console.log("Derived address with path:", keypairWithPath.getPublicKey().toSuiAddress());
 
 // State
 let treasuryId: string;
@@ -24,26 +32,45 @@ let lpTokenId: string;
 
 // Helper function to execute transactions
 async function executeTransaction(tx: TransactionBlock) {
-    // Устанавливаем газовый бюджет
-    tx.setGasBudget(20000000); // 0.02 SUI для газа
+    try {
+        // Добавляем газовый бюджет
+        tx.setGasBudget(20000000);
 
-    const result = await provider.signAndExecuteTransactionBlock({
-        transactionBlock: tx,
-        signer: keypair,
-        options: {
-            showEffects: true,
-            showEvents: true
-        }
-    });
-    console.log("Transaction result:", result);
-    return result;
+        console.log("Executing transaction with address:", keypair.getPublicKey().toSuiAddress());
+
+        // Получим список монет перед транзакцией
+        const coins = await provider.getCoins({
+            owner: keypair.getPublicKey().toSuiAddress()
+        });
+        console.log("Available coins:", coins);
+
+        const result = await provider.signAndExecuteTransactionBlock({
+            transactionBlock: tx,
+            signer: keypair,
+            options: {
+                showEffects: true,
+                showEvents: true,
+                showObjectChanges: true
+            }
+        });
+        console.log("Transaction result:", result);
+        return result;
+    } catch (error) {
+        console.error("Transaction error details:", error);
+        throw error;
+    }
 }
 
 // Create new treasury
 async function createTreasury(initialBalance: number, requiredVotes: number, initialPoolValue: number) {
+    console.log("Creating treasury with balance:", initialBalance);
     const tx = new TransactionBlock();
+
+    // Create initial balance
+    console.log("Splitting coins...");
     const [initialBalanceCoin] = tx.splitCoins(tx.gas, [tx.pure(initialBalance)]);
 
+    console.log("Calling new treasury...");
     const [treasury, managerCap] = tx.moveCall({
         target: `${PACKAGE_ID}::treasury_voting::new`,
         arguments: [
@@ -163,8 +190,6 @@ async function interactWithContract(packageId: string) {
 
     // Создаем proposal
     const myAddress = keypair.getPublicKey().toSuiAddress();
-    console.log("Script address:", myAddress);
-    console.log("Public key:", keypair.getPublicKey().toBase64());
     const proposalId = await createProposal(myAddress, 50);
     console.log("Created proposal:", proposalId);
 }
