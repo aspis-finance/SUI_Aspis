@@ -5,15 +5,15 @@ compiled_package_info:
     std: "0000000000000000000000000000000000000000000000000000000000000001"
     sui: "0000000000000000000000000000000000000000000000000000000000000002"
     treasury_voting: "0000000000000000000000000000000000000000000000000000000000000000"
-  source_digest: 1D85B92999A2532A8FEFDFDB71939FC9B0646938F1D894250917BA5573F097CC
+  source_digest: 2BD587A9734C6E491FB1D5C50234A93F2DCCD528566B6DF39B6474F7E553F7FD
   build_flags:
-    dev_mode: false
-    test_mode: false
+    dev_mode: true
+    test_mode: true
     generate_docs: false
     save_disassembly: false
     install_dir: ~
     force_recompilation: false
-    lock_file: "./Move.lock"
+    lock_file: ~
     fetch_deps_only: false
     skip_fetch_latest_git_deps: false
     default_flavor: sui

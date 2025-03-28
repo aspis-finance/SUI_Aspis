@@ -4,21 +4,24 @@
 /// Liquidity Pool with LP tokens and voting capabilities
 module treasury_voting::treasury_voting {
     use sui::event;
-    use sui::object;
     use sui::vec_set::{Self, VecSet};
     use sui::coin::{Self, Coin};
     use sui::balance::{Self, Balance};
     use sui::sui::SUI;
     use std::string::String;
     use sui::vec_map::VecMap;
+    use sui::bag::{Self, Bag};
 
     /// Capability that grants manager privileges
-    public struct ManagerCap has key {
+    public struct ManagerCap has key, store {
         id: object::UID,
     }
 
+    /// Capability that grants pauser privileges
+    public struct PauserCap has store, drop {}
+
     /// The treasury that holds assets and manages the pool
-    public struct Treasury has key {
+    public struct Treasury has key, store {
         id: object::UID,
         /// Current balance of SUI in the pool
         balance: Balance<SUI>,
@@ -28,6 +31,10 @@ module treasury_voting::treasury_voting {
         required_votes: u64,
         /// Current pool value in USD (8 decimals)
         pool_value_usd: u64,
+        /// Whether the treasury is paused
+        is_paused: bool,
+        /// Roles for different capabilities
+        roles: Bag,
     }
 
     /// LP Token that represents pool share and voting power
@@ -54,6 +61,11 @@ module treasury_voting::treasury_voting {
         current_voters: VecSet<object::ID>,
         /// Optional metadata about the withdrawal
         metadata: Option<VecMap<String, String>>,
+    }
+
+    /// Role key for storing capabilities in the bag
+    public struct RoleKey<phantom T> has store, drop, copy {
+        owner: address
     }
 
     // Events
@@ -101,6 +113,16 @@ module treasury_voting::treasury_voting {
     const EInvalidProposal: u64 = 5;
     const EInvalidRecipient: u64 = 6;
     const EInvalidPoolValue: u64 = 7;
+    const ENotAllowed: u64 = 8;
+    const EIsPaused: u64 = 9;
+
+    /// Initialize the module
+    fun init(ctx: &mut TxContext) {
+        let manager_cap = ManagerCap {
+            id: object::new(ctx),
+        };
+        transfer::public_transfer(manager_cap, tx_context::sender(ctx));
+    }
 
     /// Create a new treasury with initial settings
     public fun new(
@@ -117,6 +139,8 @@ module treasury_voting::treasury_voting {
             total_lp_supply: 0,
             required_votes,
             pool_value_usd: initial_pool_value_usd,
+            is_paused: false,
+            roles: bag::new(ctx),
         };
 
         let manager_cap = ManagerCap {
@@ -126,12 +150,38 @@ module treasury_voting::treasury_voting {
         (treasury, manager_cap)
     }
 
+    /// Create a new PauserCap
+    public fun new_pauser(): PauserCap {
+        PauserCap {}
+    }
+
+    /// Add a role to the treasury
+    public fun add_role<C: store>(
+        _manager_cap: &ManagerCap,
+        treasury: &mut Treasury,
+        role: C,
+        owner: address,
+    ) {
+        treasury.roles.add(RoleKey<C> { owner }, role);
+    }
+
+    /// Toggle pause state of the treasury
+    public fun toggle_pause(
+        treasury: &mut Treasury,
+        _pauser_cap: &PauserCap,
+        ctx: &mut TxContext,
+    ) {
+        assert!(treasury.roles.contains(RoleKey<PauserCap> { owner: tx_context::sender(ctx) }), ENotAllowed);
+        treasury.is_paused = !treasury.is_paused;
+    }
+
     /// Deposit SUI and receive LP tokens
     public fun deposit(
         treasury: &mut Treasury,
         payment: Coin<SUI>,
         ctx: &mut TxContext,
     ): LPToken {
+        assert!(!treasury.is_paused, EIsPaused);
         let amount = coin::value(&payment);
         assert!(amount > 0, EInvalidAmount);
 
@@ -163,6 +213,7 @@ module treasury_voting::treasury_voting {
         lp_tokens: LPToken,
         ctx: &mut TxContext,
     ): Coin<SUI> {
+        assert!(!treasury.is_paused, EIsPaused);
         assert!(lp_tokens.treasury == object::id(treasury), EInvalidProposal);
         let amount = calculate_withdrawal_amount(treasury, lp_tokens.amount);
         assert!(amount <= balance::value(&treasury.balance), EInsufficientBalance);
@@ -189,6 +240,7 @@ module treasury_voting::treasury_voting {
         amount: u64,
         ctx: &mut TxContext,
     ) {
+        assert!(!treasury.is_paused, EIsPaused);
         assert!(recipient != @0x0, EInvalidRecipient);
         assert!(amount <= balance::value(&treasury.balance), EInsufficientBalance);
 
@@ -222,7 +274,6 @@ module treasury_voting::treasury_voting {
         lp_tokens: &LPToken,
         ctx: &TxContext,
     ) {
-        assert!(proposal.treasury == lp_tokens.treasury, EInvalidProposal);
         let voter_id = object::id(lp_tokens);
         assert!(!vec_set::contains(&proposal.current_voters, &voter_id), EAlreadyVoted);
         
@@ -242,6 +293,7 @@ module treasury_voting::treasury_voting {
         _manager_cap: &ManagerCap,
         ctx: &mut TxContext,
     ): Coin<SUI> {
+        assert!(!treasury.is_paused, EIsPaused);
         assert!(proposal.treasury == object::id(treasury), EInvalidProposal);
         assert!(
             vec_set::size(&proposal.current_voters) >= treasury.required_votes,
@@ -288,5 +340,9 @@ module treasury_voting::treasury_voting {
 
     public fun pool_value_usd(treasury: &Treasury): u64 {
         treasury.pool_value_usd
+    }
+
+    public fun is_paused(treasury: &Treasury): bool {
+        treasury.is_paused
     }
 }
