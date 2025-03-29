@@ -62,27 +62,18 @@ async function executeTransaction(tx: TransactionBlock) {
 }
 
 // Create new treasury
-async function createTreasury(initialBalance: number, requiredVotes: number, initialPoolValue: number) {
+async function createTreasury(requiredVotes: number) {
     const tx = new TransactionBlock();
 
-    // Создаем монету для начального баланса
-    const [coin] = tx.splitCoins(tx.gas, [tx.pure(initialBalance)]);
-
-    // Создаем treasury с явным указанием типов
     const [treasury, managerCap] = tx.moveCall({
         target: `${PACKAGE_ID}::treasury_voting::new`,
         arguments: [
-            coin,
-            tx.pure(requiredVotes),
-            tx.pure(initialPoolValue)
-        ],
-        typeArguments: ['0x2::sui::SUI']  // Важно: указываем тип монеты
+            tx.pure.u64(requiredVotes)
+        ]
     });
 
     const result = await executeTransaction(tx);
-    console.log("Full result:", result);
 
-    // Проверяем результат перед сохранением ID
     if (result.effects?.status?.status === 'success') {
         treasuryId = result.effects?.created?.[0]?.reference.objectId || "";
         managerCapId = result.effects?.created?.[1]?.reference.objectId || "";
@@ -97,7 +88,7 @@ async function createTreasury(initialBalance: number, requiredVotes: number, ini
 // Deposit SUI
 async function deposit(amount: number) {
     const tx = new TransactionBlock();
-    const [coin] = tx.splitCoins(tx.gas, [tx.pure(amount)]);
+    const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(amount)]);
 
     const [lpToken] = tx.moveCall({
         target: `${PACKAGE_ID}::treasury_voting::deposit`,
@@ -109,7 +100,7 @@ async function deposit(amount: number) {
 
     const result = await executeTransaction(tx);
     lpTokenId = result.effects?.created?.[0]?.reference.objectId || "";
-
+    console.log("Deposited amount:", amount, "MIST");
     console.log("Created LPToken:", lpTokenId);
     return lpTokenId;
 }
@@ -123,15 +114,15 @@ async function createProposal(recipient: string, amount: number) {
         arguments: [
             tx.object(treasuryId),
             tx.object(managerCapId),
-            tx.pure(recipient),
-            tx.pure(amount)
+            tx.pure.address(recipient),
+            tx.pure.u64(amount)
         ]
     });
 
     const result = await executeTransaction(tx);
     proposalId = result.effects?.created?.[0]?.reference.objectId || "";
-
-    console.log("Created Proposal:", proposalId);
+    console.log("Created proposal for amount:", amount, "MIST");
+    console.log("Proposal ID:", proposalId);
     return proposalId;
 }
 
@@ -186,7 +177,7 @@ async function withdraw() {
 // Функция для взаимодействия с контрактом
 async function interactWithContract(packageId: string) {
     // Создаем treasury с 1 SUI initial balance
-    const { treasuryId, managerCapId } = await createTreasury(1, 2, 1000);
+    const { treasuryId, managerCapId } = await createTreasury(2);
     console.log("Created treasury:", treasuryId);
 
     // Депозит 1 SUI
@@ -201,28 +192,38 @@ async function interactWithContract(packageId: string) {
 
 async function main() {
     try {
-        // Create treasury with 0.1 SUI initial balance
-        await createTreasury(100000000, 2, 100000000); // 0.1 SUI = 100000000 MIST
+        console.log("Starting treasury test script...");
 
-        // Deposit 0.1 SUI
-        await deposit(100000000); // 0.1 SUI
+        // Create treasury with 2 required votes
+        console.log("Creating treasury...");
+        await createTreasury(2);
 
-        // Create proposal to withdraw 0.05 SUI
+        // Deposit 1 SUI
+        console.log("Depositing 1 SUI...");
+        await deposit(1_000_000_000); // 1 SUI = 1_000_000_000 MIST
+
+        // Create proposal to withdraw 0.5 SUI
+        console.log("Creating withdrawal proposal...");
         const myAddress = keypair.getPublicKey().toSuiAddress();
-        await createProposal(myAddress, 50000000); // 0.05 SUI
+        await createProposal(myAddress, 500_000_000); // 0.5 SUI
 
-        // Vote
+        // Vote on proposal
+        console.log("Voting on proposal...");
         await vote();
 
         // Execute proposal
+        console.log("Executing proposal...");
         await executeProposal();
 
         // Withdraw remaining LP tokens
+        console.log("Withdrawing remaining LP tokens...");
         await withdraw();
+
+        console.log("Test script completed successfully!");
     } catch (error) {
-        console.error("Error:", error);
+        console.error("Error in test script:", error);
     }
 }
 
 // Запускаем
-main(); 
+main().catch(console.error); 

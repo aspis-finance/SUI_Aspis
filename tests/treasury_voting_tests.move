@@ -1,41 +1,34 @@
 #[test_only]
 module treasury_voting::treasury_voting_tests {
     use sui::test_scenario::{Self};
-    use sui::coin;
+    use sui::coin::{Self};
     use sui::balance;
-    use treasury_voting::treasury_voting::{Self, WithdrawalProposal};
+    use sui::sui::SUI;
+    use treasury_voting::treasury_voting::{Self, Treasury, ManagerCap, PauserCap, WithdrawalProposal};
 
     #[test]
     fun test_treasury_creation() {
         let user = @0xA;
-        let mut scenario = test_scenario::begin(user);
-
-        // Create initial balance
-        let initial_balance = balance::create_for_testing(1000);
-        let required_votes = 2;
-        let initial_pool_value = 1000;
-
+        let scenario = test_scenario::begin(user);
+        
         // Create treasury
         let (treasury, manager_cap) = treasury_voting::new(
-            initial_balance,
-            required_votes,
-            initial_pool_value,
+            2, // required votes
             test_scenario::ctx(&mut scenario),
         );
 
         // Share objects
         test_scenario::return_shared(treasury);
-        test_scenario::return_shared(manager_cap);
+        test_scenario::return_to_sender(&scenario, manager_cap);
         test_scenario::next_tx(&mut scenario, user);
 
         // Take objects for verification
-        let treasury = test_scenario::take_shared<treasury_voting::Treasury>(&scenario);
+        let treasury = test_scenario::take_shared<Treasury>(&scenario);
         
         // Verify treasury state
         assert!(treasury_voting::total_lp_supply(&treasury) == 0, 0);
-        assert!(treasury_voting::pool_value_usd(&treasury) == initial_pool_value, 1);
-        assert!(balance::value(treasury_voting::balance(&treasury)) == 1000, 2);
-        assert!(!treasury_voting::is_paused(&treasury), 3);
+        assert!(balance::value(treasury_voting::balance(&treasury)) == 0, 1);
+        assert!(!treasury_voting::is_paused(&treasury), 2);
 
         // Return objects
         test_scenario::return_shared(treasury);
@@ -185,205 +178,95 @@ module treasury_voting::treasury_voting_tests {
     #[test]
     fun test_deposit_and_withdraw() {
         let user = @0xA;
-        let mut scenario = test_scenario::begin(user);
+        let scenario = test_scenario::begin(user);
 
-        // Create initial balance
-        let initial_balance = balance::create_for_testing(1000);
-        let required_votes = 2;
-        let initial_pool_value = 1000;
-
-        // Create and share treasury
+        // Create treasury
         let (treasury, manager_cap) = treasury_voting::new(
-            initial_balance,
-            required_votes,
-            initial_pool_value,
+            2,
             test_scenario::ctx(&mut scenario),
         );
-        test_scenario::return_shared(treasury);
-        test_scenario::return_shared(manager_cap);
-        test_scenario::next_tx(&mut scenario, user);
 
-        // Take treasury for deposit
-        let mut treasury = test_scenario::take_shared<treasury_voting::Treasury>(&scenario);
-
-        // Create test coin for deposit
-        let deposit_amount = 100;
-        let test_coin = coin::mint_for_testing(deposit_amount, test_scenario::ctx(&mut scenario));
-
-        // Deposit
-        let lp_tokens = treasury_voting::deposit(&mut treasury, test_coin, test_scenario::ctx(&mut scenario));
+        // Create test coin
+        let coin = coin::mint_for_testing<SUI>(1000, test_scenario::ctx(&mut scenario));
         
-        // Return treasury
-        test_scenario::return_shared(treasury);
-        test_scenario::next_tx(&mut scenario, user);
-
-        // Take treasury for verification and withdrawal
-        let mut treasury = test_scenario::take_shared<treasury_voting::Treasury>(&scenario);
+        // Deposit coins and get LP tokens
+        let lp_tokens = treasury_voting::deposit(
+            &mut treasury,
+            coin,
+            test_scenario::ctx(&mut scenario),
+        );
 
         // Verify deposit
-        assert!(balance::value(treasury_voting::balance(&treasury)) == 1100, 3);
-        assert!(treasury_voting::total_lp_supply(&treasury) == deposit_amount, 4);
+        assert!(treasury_voting::total_lp_supply(&treasury) == 1000, 0);
+        assert!(balance::value(treasury_voting::balance(&treasury)) == 1000, 1);
 
-        // Withdraw
-        let withdrawn_coin = treasury_voting::withdraw(&mut treasury, lp_tokens, test_scenario::ctx(&mut scenario));
-        
+        // Withdraw using LP tokens
+        let withdrawn_coin = treasury_voting::withdraw(
+            &mut treasury,
+            lp_tokens,
+            test_scenario::ctx(&mut scenario),
+        );
+
         // Verify withdrawal
-        assert!(balance::value(treasury_voting::balance(&treasury)) == 1000, 6);
-        assert!(treasury_voting::total_lp_supply(&treasury) == 0, 7);
-        assert!(coin::value(&withdrawn_coin) == deposit_amount, 8);
+        assert!(treasury_voting::total_lp_supply(&treasury) == 0, 2);
+        assert!(balance::value(treasury_voting::balance(&treasury)) == 0, 3);
+        assert!(coin::value(&withdrawn_coin) == 1000, 4);
 
-        // Consume the withdrawn coin
-        let withdrawn_balance = coin::into_balance(withdrawn_coin);
-        balance::destroy_for_testing(withdrawn_balance);
-
-        // Return treasury
+        // Cleanup
+        coin::destroy_for_testing(withdrawn_coin);
         test_scenario::return_shared(treasury);
+        test_scenario::return_to_sender(&scenario, manager_cap);
         test_scenario::end(scenario);
     }
 
     #[test]
     fun test_proposal_creation_and_voting() {
         let user = @0xA;
-        let mut scenario = test_scenario::begin(user);
+        let scenario = test_scenario::begin(user);
 
-        // Create initial balance
-        let initial_balance = balance::create_for_testing(1000);
-        let required_votes = 2;
-        let initial_pool_value = 1000;
-
-        // Create and share treasury
-        let (treasury, manager_cap) = treasury_voting::new(
-            initial_balance,
-            required_votes,
-            initial_pool_value,
-            test_scenario::ctx(&mut scenario),
-        );
-        test_scenario::return_shared(treasury);
-        test_scenario::return_shared(manager_cap);
-        test_scenario::next_tx(&mut scenario, user);
-
-        // Take objects for deposit and proposal creation
-        let mut treasury = test_scenario::take_shared<treasury_voting::Treasury>(&scenario);
-        let manager_cap = test_scenario::take_shared<treasury_voting::ManagerCap>(&scenario);
-
-        // Create test coin for deposit
-        let deposit_amount = 100;
-        let test_coin = coin::mint_for_testing(deposit_amount, test_scenario::ctx(&mut scenario));
-
-        // Deposit to get LP tokens
-        let lp_tokens = treasury_voting::deposit(&mut treasury, test_coin, test_scenario::ctx(&mut scenario));
+        // Create treasury and deposit
+        let (treasury, manager_cap) = treasury_voting::new(2, test_scenario::ctx(&mut scenario));
+        let coin = coin::mint_for_testing<SUI>(1000, test_scenario::ctx(&mut scenario));
+        let lp_tokens = treasury_voting::deposit(&mut treasury, coin, test_scenario::ctx(&mut scenario));
 
         // Create proposal
-        let recipient = @0xB;
-        let proposal_amount = 50;
-        treasury_voting::create_proposal(&treasury, &manager_cap, recipient, proposal_amount, test_scenario::ctx(&mut scenario));
+        treasury_voting::create_proposal(
+            &treasury,
+            &manager_cap,
+            user,
+            500,
+            test_scenario::ctx(&mut scenario),
+        );
 
-        // Return objects
-        test_scenario::return_shared(treasury);
-        test_scenario::return_shared(manager_cap);
         test_scenario::next_tx(&mut scenario, user);
 
         // Take proposal for voting
-        let mut proposal = test_scenario::take_shared<WithdrawalProposal>(&scenario);
+        let proposal = test_scenario::take_shared<WithdrawalProposal>(&scenario);
 
-        // Vote on proposal
-        treasury_voting::vote(&mut proposal, &lp_tokens, test_scenario::ctx(&mut scenario));
-
-        // Return proposal
-        test_scenario::return_shared(proposal);
-        test_scenario::next_tx(&mut scenario, user);
-
-        // Take treasury for verification
-        let mut treasury = test_scenario::take_shared<treasury_voting::Treasury>(&scenario);
-
-        // Verify state
-        assert!(treasury_voting::total_lp_supply(&treasury) == deposit_amount, 9);
-
-        // Consume LP tokens by withdrawing
-        let withdrawn_coin = treasury_voting::withdraw(&mut treasury, lp_tokens, test_scenario::ctx(&mut scenario));
-        let withdrawn_balance = coin::into_balance(withdrawn_coin);
-        balance::destroy_for_testing(withdrawn_balance);
-
-        // Return treasury
-        test_scenario::return_shared(treasury);
-        test_scenario::end(scenario);
-    }
-
-    #[test]
-    fun test_proposal_execution() {
-        let user = @0xA;
-        let mut scenario = test_scenario::begin(user);
-
-        // Create initial balance
-        let initial_balance = balance::create_for_testing(1000);
-        let required_votes = 1; // Set to 1 for testing
-        let initial_pool_value = 1000;
-
-        // Create and share treasury
-        let (treasury, manager_cap) = treasury_voting::new(
-            initial_balance,
-            required_votes,
-            initial_pool_value,
+        // Vote with LP tokens
+        treasury_voting::vote(
+            &mut proposal,
+            &lp_tokens,
             test_scenario::ctx(&mut scenario),
         );
+
+        // Execute proposal
+        let withdrawn_coin = treasury_voting::execute_proposal(
+            &mut treasury,
+            &mut proposal,
+            &manager_cap,
+            test_scenario::ctx(&mut scenario),
+        );
+
+        // Verify results
+        assert!(coin::value(&withdrawn_coin) == 500, 0);
+        assert!(balance::value(treasury_voting::balance(&treasury)) == 500, 1);
+
+        // Cleanup
+        coin::destroy_for_testing(withdrawn_coin);
         test_scenario::return_shared(treasury);
-        test_scenario::return_shared(manager_cap);
-        test_scenario::next_tx(&mut scenario, user);
-
-        // Take objects for deposit and proposal creation
-        let mut treasury = test_scenario::take_shared<treasury_voting::Treasury>(&scenario);
-        let manager_cap = test_scenario::take_shared<treasury_voting::ManagerCap>(&scenario);
-
-        // Create test coin for deposit
-        let deposit_amount = 100;
-        let test_coin = coin::mint_for_testing(deposit_amount, test_scenario::ctx(&mut scenario));
-
-        // Deposit to get LP tokens
-        let lp_tokens = treasury_voting::deposit(&mut treasury, test_coin, test_scenario::ctx(&mut scenario));
-
-        // Create proposal
-        let recipient = @0xB;
-        let proposal_amount = 50;
-        treasury_voting::create_proposal(&treasury, &manager_cap, recipient, proposal_amount, test_scenario::ctx(&mut scenario));
-
-        // Return objects
-        test_scenario::return_shared(treasury);
-        test_scenario::return_shared(manager_cap);
-        test_scenario::next_tx(&mut scenario, user);
-
-        // Take objects for voting and execution
-        let mut proposal = test_scenario::take_shared<WithdrawalProposal>(&scenario);
-        let mut treasury = test_scenario::take_shared<treasury_voting::Treasury>(&scenario);
-        let manager_cap = test_scenario::take_shared<treasury_voting::ManagerCap>(&scenario);
-
-        // Vote and execute proposal
-        treasury_voting::vote(&mut proposal, &lp_tokens, test_scenario::ctx(&mut scenario));
-        let withdrawn_coin = treasury_voting::execute_proposal(&mut treasury, &mut proposal, &manager_cap, test_scenario::ctx(&mut scenario));
-
-        // Verify execution
-        assert!(coin::value(&withdrawn_coin) == proposal_amount, 10);
-        assert!(balance::value(treasury_voting::balance(&treasury)) == 1050, 11);
-
-        // Consume the withdrawn coin
-        let withdrawn_balance = coin::into_balance(withdrawn_coin);
-        balance::destroy_for_testing(withdrawn_balance);
-
-        // Return objects
         test_scenario::return_shared(proposal);
-        test_scenario::return_shared(treasury);
-        test_scenario::return_shared(manager_cap);
-        test_scenario::next_tx(&mut scenario, user);
-
-        // Take treasury for final withdrawal
-        let mut treasury = test_scenario::take_shared<treasury_voting::Treasury>(&scenario);
-
-        // Consume LP tokens by withdrawing
-        let withdrawn_coin = treasury_voting::withdraw(&mut treasury, lp_tokens, test_scenario::ctx(&mut scenario));
-        let withdrawn_balance = coin::into_balance(withdrawn_coin);
-        balance::destroy_for_testing(withdrawn_balance);
-
-        // Return treasury
-        test_scenario::return_shared(treasury);
+        test_scenario::return_to_sender(&scenario, manager_cap);
         test_scenario::end(scenario);
     }
 

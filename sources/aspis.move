@@ -29,8 +29,6 @@ module treasury_voting::treasury_voting {
         total_lp_supply: u64,
         /// Number of votes required for quorum
         required_votes: u64,
-        /// Current pool value in USD (8 decimals)
-        pool_value_usd: u64,
         /// Whether the treasury is paused
         is_paused: bool,
         /// Roles for different capabilities
@@ -112,7 +110,6 @@ module treasury_voting::treasury_voting {
     const ENotEnoughVotes: u64 = 4;
     const EInvalidProposal: u64 = 5;
     const EInvalidRecipient: u64 = 6;
-    const EInvalidPoolValue: u64 = 7;
     const ENotAllowed: u64 = 8;
     const EIsPaused: u64 = 9;
 
@@ -126,19 +123,14 @@ module treasury_voting::treasury_voting {
 
     /// Create a new treasury with initial settings
     public fun new(
-        initial_balance: Balance<SUI>,
         required_votes: u64,
-        initial_pool_value_usd: u64,
         ctx: &mut TxContext,
     ): (Treasury, ManagerCap) {
-        assert!(initial_pool_value_usd > 0, EInvalidPoolValue);
-        
         let treasury = Treasury {
             id: object::new(ctx),
-            balance: initial_balance,
+            balance: balance::zero(),
             total_lp_supply: 0,
             required_votes,
-            pool_value_usd: initial_pool_value_usd,
             is_paused: false,
             roles: bag::new(ctx),
         };
@@ -314,17 +306,17 @@ module treasury_voting::treasury_voting {
         coin::from_balance(balance::split(&mut treasury.balance, amount), ctx)
     }
 
-    /// Helper function to calculate LP tokens to mint
+    /// Calculate LP tokens based on deposit amount
     fun calculate_lp_tokens(treasury: &Treasury, deposit_amount: u64): u64 {
         if (treasury.total_lp_supply == 0) {
             deposit_amount
         } else {
             let current_balance = balance::value(&treasury.balance);
-            (deposit_amount * treasury.total_lp_supply) / (current_balance - deposit_amount)
+            (deposit_amount * treasury.total_lp_supply) / current_balance
         }
     }
 
-    /// Helper function to calculate withdrawal amount
+    /// Calculate withdrawal amount based on LP tokens
     fun calculate_withdrawal_amount(treasury: &Treasury, lp_amount: u64): u64 {
         (lp_amount * balance::value(&treasury.balance)) / treasury.total_lp_supply
     }
@@ -336,10 +328,6 @@ module treasury_voting::treasury_voting {
 
     public fun total_lp_supply(treasury: &Treasury): u64 {
         treasury.total_lp_supply
-    }
-
-    public fun pool_value_usd(treasury: &Treasury): u64 {
-        treasury.pool_value_usd
     }
 
     public fun is_paused(treasury: &Treasury): bool {
