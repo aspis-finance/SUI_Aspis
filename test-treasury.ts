@@ -4,7 +4,7 @@ import { TransactionBlock } from '@mysten/sui.js/transactions';
 import { fromB64 } from '@mysten/sui.js/utils';
 
 // Configuration
-const PACKAGE_ID = "0xcaa136654bee12efac50cbb345b5f0327a27374398b60130842607152461bb0a";
+const PACKAGE_ID = "0xaef5f28d536696a1d64241abf3fd18269c71f78b3914252be28d9cc0df9c3932";
 const RPC_URL = "https://fullnode.devnet.sui.io:443";
 
 // Initialize provider and keypairs
@@ -254,40 +254,49 @@ async function main() {
     try {
         console.log("Starting treasury test script...");
 
-        // Create treasury with 40% required votes threshold
+        // Создаем treasury с порогом 40%
         console.log("Creating treasury...");
-        await createTreasury(40); // 40% threshold
+        await createTreasury(40);
 
-        // Deposit from both wallets
+        // Первый депозит: 100 SUI
         console.log("Depositing from Wallet 1...");
-        await deposit(100_000_000, keypair1); // 0.1 SUI = 100,000,000 MIST
-        // После этого депозита будет создано 100,000,000 LP токенов
+        await deposit(10_000_000, keypair1); // 0.1 SUI
+        console.log("LP Token 1:", lpTokenId1);
 
+        // Второй депозит: 150 SUI
         console.log("Depositing from Wallet 2...");
-        await deposit(200_000_000, keypair2); // 0.2 SUI = 200,000,000 MIST
-        // После этого депозита будет создано примерно 200,000,000 LP токенов
-        // Всего LP токенов: ~300,000,000
+        await deposit(15_000_000, keypair2); // 0.15 SUI
+        console.log("LP Token 2:", lpTokenId2);
 
-        // Create proposal to withdraw 0.15 SUI
+        // Теперь в treasury:
+        // - Total: 0.2 SUI
+        // - LP токенов у wallet1: 0.1 SUI worth (40% от total supply)
+        // - LP токенов у wallet2: 0.15 SUI worth (60% от total supply)
+
+        // Создаем proposal на вывод 50 SUI
         console.log("Creating withdrawal proposal...");
         const myAddress = keypair1.getPublicKey().toSuiAddress();
-        await createProposal(myAddress, 150_000_000); // 0.15 SUI
+        await createProposal(myAddress, 10_000_000); // 0.1 SUI
 
-        // Vote on proposal from both wallets
-        // Wallet1 голосует 100M LP токенов (~33% от общего количества)
+        // Голосуем первым кошельком (40% голосов)
         console.log("Voting from Wallet 1...");
         await vote(lpTokenId1, keypair1);
+        console.log("Wallet 1 voted with LP tokens worth 40% of total supply");
 
-        // Wallet2 голосует 200M LP токенов (~66% от общего количества)
-        // Вместе будет 100% голосов, что больше требуемых 40%
+        // Голосуем вторым кошельком (60% голосов)
         console.log("Voting from Wallet 2...");
         await vote(lpTokenId2, keypair2);
+        console.log("Wallet 2 voted with LP tokens worth 60% of total supply");
 
-        // Execute proposal
+        // Суммарно проголосовало 100% LP токенов, что больше требуемых 40%
+        console.log("Total voted: 100% of LP tokens");
+        console.log("Required threshold: 40%");
+
+        // Выполняем proposal
         console.log("Executing proposal...");
         await executeProposal();
 
-        // Withdraw remaining LP tokens
+        // Выводим оставшиеся LP токены
         console.log("Withdrawing remaining LP tokens...");
         await withdraw();
 

@@ -59,6 +59,8 @@ module treasury_voting::treasury_voting {
         current_voters: VecSet<object::ID>,
         /// Optional metadata about the withdrawal
         metadata: Option<VecMap<String, String>>,
+        /// Sum of voted LP tokens
+        voted_amount: u64,
     }
 
     /// Role key for storing capabilities in the bag
@@ -255,6 +257,7 @@ module treasury_voting::treasury_voting {
             amount,
             current_voters: vec_set::empty(),
             metadata: option::none(),
+            voted_amount: 0,
         };
 
         event::emit(ProposalCreated {
@@ -277,6 +280,7 @@ module treasury_voting::treasury_voting {
         let voter_id = object::id(lp_tokens);
         assert!(!vec_set::contains(&proposal.current_voters, &voter_id), EAlreadyVoted);
         
+        proposal.voted_amount = proposal.voted_amount + lp_tokens.amount;
         vec_set::insert(&mut proposal.current_voters, voter_id);
 
         event::emit(ProposalVoted {
@@ -296,14 +300,9 @@ module treasury_voting::treasury_voting {
         assert!(!treasury.is_paused, EIsPaused);
         assert!(proposal.treasury == object::id(treasury), EInvalidProposal);
 
-        // Считаем сумму LP токенов всех проголосовавших
-        let total_voted_amount = vec_set::size(&proposal.current_voters);
-        
-        // Считаем требуемое количество голосов (threshold * total_supply / 100)
+        // Проверяем процент проголосовавших LP токенов
         let required_amount = (treasury.total_lp_supply * treasury.required_votes) / 100;
-        
-        // Проверяем, что набралось достаточно голосов
-        assert!(total_voted_amount >= required_amount, ENotEnoughVotes);
+        assert!(proposal.voted_amount >= required_amount, ENotEnoughVotes);
 
         let amount = proposal.amount;
         assert!(amount <= balance::value(&treasury.balance), EInsufficientBalance);
