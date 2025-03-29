@@ -16,7 +16,7 @@ The treasury acts as a pool for SUI tokens, where:
 
 ### LP Token Economics
 
-LP tokens represent a user's share in the treasury. The number of LP tokens minted is calculated using:
+LP tokens represent a user's share in the treasury. The number of LP tokens minted is calculated using the meritocracy rules and can have more rules in the future.
 
 ## Features
 

@@ -4,7 +4,7 @@ import { TransactionBlock } from '@mysten/sui.js/transactions';
 import { fromB64 } from '@mysten/sui.js/utils';
 
 // Configuration
-const PACKAGE_ID = "0xaef5f28d536696a1d64241abf3fd18269c71f78b3914252be28d9cc0df9c3932";
+const PACKAGE_ID = "0x4c869aeab8fa28b7d60d57e97cb21ee8f0df55909a7247e199b2fdd7ac0c4af6";
 const RPC_URL = "https://fullnode.devnet.sui.io:443";
 
 // Initialize provider and keypairs
