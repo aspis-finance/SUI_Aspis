@@ -4,7 +4,7 @@ import { TransactionBlock } from '@mysten/sui.js/transactions';
 import { fromB64 } from '@mysten/sui.js/utils';
 
 // Configuration
-const PACKAGE_ID = "0x00cf538658ebb2933d139a41ba3be0f6d0e48a178986987c142e1729dbc6598b";
+const PACKAGE_ID = "0x067872eb574730bb07cae669b73aaf8130c13b7fef18e390b73ecb8381cb495f";
 const RPC_URL = "https://fullnode.devnet.sui.io:443";
 
 // Initialize provider and keypair
@@ -90,7 +90,8 @@ async function deposit(amount: number) {
     const tx = new TransactionBlock();
     const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(amount)]);
 
-    const [lpToken] = tx.moveCall({
+    // Вызываем deposit
+    tx.moveCall({
         target: `${PACKAGE_ID}::treasury_voting::deposit`,
         arguments: [
             tx.object(treasuryId),
@@ -99,10 +100,26 @@ async function deposit(amount: number) {
     });
 
     const result = await executeTransaction(tx);
-    lpTokenId = result.effects?.created?.[0]?.reference.objectId || "";
-    console.log("Deposited amount:", amount, "MIST");
-    console.log("Created LPToken:", lpTokenId);
-    return lpTokenId;
+
+    if (result.effects?.status?.status === 'success') {
+        // Ищем созданный LPToken в objectChanges
+        const lpToken = result.objectChanges?.find(
+            change => change.type === 'created' &&
+                'objectType' in change &&
+                change.objectType === `${PACKAGE_ID}::treasury_voting::LPToken`
+        );
+
+        if (lpToken && 'objectId' in lpToken) {
+            lpTokenId = lpToken.objectId;
+            console.log("Deposited amount:", amount, "MIST");
+            console.log("Created LPToken:", lpTokenId);
+            return lpTokenId;
+        } else {
+            throw new Error("Failed to find created LPToken");
+        }
+    } else {
+        throw new Error(`Failed to deposit: ${result.effects?.status?.error}`);
+    }
 }
 
 // Create withdrawal proposal
@@ -120,10 +137,26 @@ async function createProposal(recipient: string, amount: number) {
     });
 
     const result = await executeTransaction(tx);
-    proposalId = result.effects?.created?.[0]?.reference.objectId || "";
-    console.log("Created proposal for amount:", amount, "MIST");
-    console.log("Proposal ID:", proposalId);
-    return proposalId;
+
+    if (result.effects?.status?.status === 'success') {
+        // Ищем созданный Proposal в objectChanges
+        const proposal = result.objectChanges?.find(
+            change => change.type === 'created' &&
+                'objectType' in change &&
+                change.objectType === `${PACKAGE_ID}::treasury_voting::WithdrawalProposal`
+        );
+
+        if (proposal && 'objectId' in proposal) {
+            proposalId = proposal.objectId;
+            console.log("Created proposal for amount:", amount, "MIST");
+            console.log("Proposal ID:", proposalId);
+            return proposalId;
+        } else {
+            throw new Error("Failed to find created Proposal");
+        }
+    } else {
+        throw new Error(`Failed to create proposal: ${result.effects?.status?.error}`);
+    }
 }
 
 // Vote on proposal
@@ -200,12 +233,12 @@ async function main() {
 
         // Deposit 1 SUI
         console.log("Depositing 1 SUI...");
-        await deposit(1_000_000_000); // 1 SUI = 1_000_000_000 MIST
+        await deposit(100_000_000); // 0.1 SUI = 100_000_00 MIST
 
         // Create proposal to withdraw 0.5 SUI
         console.log("Creating withdrawal proposal...");
         const myAddress = keypair.getPublicKey().toSuiAddress();
-        await createProposal(myAddress, 500_000_000); // 0.5 SUI
+        await createProposal(myAddress, 50_000_000); // 0.5 SUI
 
         // Vote on proposal
         console.log("Voting on proposal...");
@@ -222,6 +255,11 @@ async function main() {
         console.log("Test script completed successfully!");
     } catch (error) {
         console.error("Error in test script:", error);
+        // Добавляем больше информации об ошибке
+        if (error instanceof Error) {
+            console.error("Error message:", error.message);
+            console.error("Error stack:", error.stack);
+        }
     }
 }
 

@@ -36,7 +36,7 @@ module treasury_voting::treasury_voting {
     }
 
     /// LP Token that represents pool share and voting power
-    public struct LPToken has key {
+    public struct LPToken has key, store {
         id: object::UID,
         /// The amount of LP tokens
         amount: u64,
@@ -125,7 +125,7 @@ module treasury_voting::treasury_voting {
     public fun new(
         required_votes: u64,
         ctx: &mut TxContext,
-    ): (Treasury, ManagerCap) {
+    ) {
         let treasury = Treasury {
             id: object::new(ctx),
             balance: balance::zero(),
@@ -139,7 +139,10 @@ module treasury_voting::treasury_voting {
             id: object::new(ctx),
         };
 
-        (treasury, manager_cap)
+        // Transfer manager capability to the creator using public_transfer for better composability
+        transfer::public_transfer(manager_cap, tx_context::sender(ctx));
+        // Share treasury object so it can be accessed by anyone
+        transfer::share_object(treasury);
     }
 
     /// Create a new PauserCap
@@ -172,7 +175,7 @@ module treasury_voting::treasury_voting {
         treasury: &mut Treasury,
         payment: Coin<SUI>,
         ctx: &mut TxContext,
-    ): LPToken {
+    ) {
         assert!(!treasury.is_paused, EIsPaused);
         let amount = coin::value(&payment);
         assert!(amount > 0, EInvalidAmount);
@@ -192,11 +195,14 @@ module treasury_voting::treasury_voting {
             lp_tokens: lp_amount,
         });
 
-        LPToken {
+        let lp_token = LPToken {
             id: object::new(ctx),
             amount: lp_amount,
             treasury: object::id(treasury),
-        }
+        };
+
+        // Передаем LPToken отправителю транзакции
+        transfer::public_transfer(lp_token, tx_context::sender(ctx))
     }
 
     /// Withdraw SUI by burning LP tokens
