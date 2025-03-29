@@ -210,7 +210,7 @@ module treasury_voting::treasury_voting {
         treasury: &mut Treasury,
         lp_tokens: LPToken,
         ctx: &mut TxContext,
-    ): Coin<SUI> {
+    ) {
         assert!(!treasury.is_paused, EIsPaused);
         assert!(lp_tokens.treasury == object::id(treasury), EInvalidProposal);
         let amount = calculate_withdrawal_amount(treasury, lp_tokens.amount);
@@ -227,7 +227,9 @@ module treasury_voting::treasury_voting {
             lp_tokens: lp_amount,
         });
 
-        coin::from_balance(balance::split(&mut treasury.balance, amount), ctx)
+        // Создаем монету и сразу передаем её отправителю транзакции
+        let coin = coin::from_balance(balance::split(&mut treasury.balance, amount), ctx);
+        transfer::public_transfer(coin, tx_context::sender(ctx))
     }
 
     /// Create a withdrawal proposal (manager only)
@@ -290,13 +292,18 @@ module treasury_voting::treasury_voting {
         proposal: &mut WithdrawalProposal,
         _manager_cap: &ManagerCap,
         ctx: &mut TxContext,
-    ): Coin<SUI> {
+    ) {
         assert!(!treasury.is_paused, EIsPaused);
         assert!(proposal.treasury == object::id(treasury), EInvalidProposal);
-        assert!(
-            vec_set::size(&proposal.current_voters) >= treasury.required_votes,
-            ENotEnoughVotes,
-        );
+
+        // Считаем сумму LP токенов всех проголосовавших
+        let total_voted_amount = vec_set::size(&proposal.current_voters);
+        
+        // Считаем требуемое количество голосов (threshold * total_supply / 100)
+        let required_amount = (treasury.total_lp_supply * treasury.required_votes) / 100;
+        
+        // Проверяем, что набралось достаточно голосов
+        assert!(total_voted_amount >= required_amount, ENotEnoughVotes);
 
         let amount = proposal.amount;
         assert!(amount <= balance::value(&treasury.balance), EInsufficientBalance);
@@ -309,7 +316,8 @@ module treasury_voting::treasury_voting {
             amount,
         });
 
-        coin::from_balance(balance::split(&mut treasury.balance, amount), ctx)
+        let coin = coin::from_balance(balance::split(&mut treasury.balance, amount), ctx);
+        transfer::public_transfer(coin, proposal.recipient)
     }
 
     /// Calculate LP tokens based on deposit amount
